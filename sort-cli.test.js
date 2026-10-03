@@ -65,6 +65,30 @@ describe("sortFiles logic", () => {
 		expect(fs.move).toHaveBeenCalledTimes(2);
 	});
 
+	it("should skip hidden files", async () => {
+		fs.readdir.mockResolvedValue([
+			{ isFile: () => true, name: ".eslintrc.json" },
+			{ isFile: () => true, name: "app.js" },
+		]);
+
+		await sortFiles();
+
+		expect(fs.move).toHaveBeenCalledTimes(1);
+		expect(fs.move).toHaveBeenCalledWith(
+			expect.stringContaining("app.js"),
+			expect.stringContaining("code"),
+			expect.anything()
+		);
+	});
+
+	it("should sort a user file named sort-cli.js", async () => {
+		fs.readdir.mockResolvedValue([{ isFile: () => true, name: "sort-cli.js" }]);
+
+		await sortFiles();
+
+		expect(fs.move).toHaveBeenCalledTimes(1);
+	});
+
 	it("should respect dry-run flag", async () => {
 		program.opts.mockReturnValue({ dryRun: true });
 

@@ -177,8 +177,8 @@ async function sortFiles() {
 				const fileExtension = path.extname(file.name).slice(1).toLowerCase();
 				const category = getCategoryForExtension(fileExtension);
 
-				// Skip if no matching category or if it's our script
-				if (!category || file.name === "sort-cli.js") {
+				// Skip hidden files (dotfiles) and files with no matching category
+				if (file.name.startsWith(".") || !category) {
 					skipCount++;
 					continue;
 				}
