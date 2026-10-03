@@ -1,242 +1,314 @@
 #!/usr/bin/env node
+// @ts-check
 
 import fs from "fs-extra";
 import path from "path";
-import { program } from "commander";
+import { Command, InvalidArgumentError, Option } from "commander";
 import chalk from "chalk";
 import ora from "ora";
 import { fileURLToPath } from "url";
+import { loadConfig } from "./lib/config.js";
+import { sortFiles } from "./lib/sorter.js";
 
-// Helper to get package info
+export { CATEGORIES, getCategoryForExtension } from "./lib/categories.js";
+export { sortFiles, getAvailablePath } from "./lib/sorter.js";
+
+/**
+ * Reads the package version from package.json.
+ * @returns {{ version: string }} The version, or "1.0.0" if it can't be read.
+ */
 function getPackageConfig() {
 	try {
 		const __dirname = path.dirname(fileURLToPath(import.meta.url));
 		const data = fs.readJsonSync(path.join(__dirname, "package.json"));
 		return { version: data.version || "1.0.0" };
-	} catch (e) {
+	} catch {
 		return { version: "1.0.0" };
 	}
 }
 
-// Predefined categories and their extensions
-export const CATEGORIES = {
-	images: [
-		"jpg",
-		"jpeg",
-		"png",
-		"gif",
-		"bmp",
-		"svg",
-		"webp",
-		"ico",
-		"tiff",
-		"raw",
-	],
-	videos: [
-		"mp4",
-		"mov",
-		"avi",
-		"mkv",
-		"wmv",
-		"flv",
-		"webm",
-		"m4v",
-		"mpeg",
-		"3gp",
-	],
-	documents: [
-		"pdf",
-		"doc",
-		"docx",
-		"txt",
-		"rtf",
-		"odt",
-		"xls",
-		"xlsx",
-		"ppt",
-		"pptx",
-		"csv",
-	],
-	archives: ["zip", "rar", "7z", "tar", "gz", "bz2", "xz", "iso"],
-	music: [
-		"mp3",
-		"wav",
-		"flac",
-		"m4a",
-		"aac",
-		"ogg",
-		"wma",
-		"aiff",
-		"alac",
-		"mid",
-		"midi",
-	],
-	code: [
-		"js",
-		"py",
-		"html",
-		"css",
-		"ts",
-		"json",
-		"go",
-		"md",
-		"jsx",
-		"tsx",
-		"c",
-		"cpp",
-		"java",
-	],
-	executables: ["exe", "dmg", "pkg", "app", "sh", "bin"],
-	ebooks: ["epub", "mobi", "azw3", "fb2"],
-	fonts: ["ttf", "otf", "woff", "woff2", "eot"],
-};
-
-program
-	.version(getPackageConfig().version)
-	.description("A CLI tool to sort files into predefined categories")
-	.argument("[dir]", "Directory to sort (defaults to current directory)")
-	.option("-d, --dry-run", "Show what would be done without making changes")
-	.option("-r, --revert", "Revert files back to original directory")
-	.parse(process.argv);
+/**
+ * Describes files left in place for lack of a matching category, most
+ * common extension first, e.g. ".xyz (3), no extension (1)".
+ * @param {Record<string, number>} unknown - Counts keyed by extension.
+ * @returns {string} Empty when there is nothing to report.
+ */
+export function formatUnknown(unknown) {
+	return Object.entries(unknown)
+		.sort(([extA, a], [extB, b]) => b - a || extA.localeCompare(extB))
+		.map(([ext, count]) => `${ext ? `.${ext}` : "no extension"} (${count})`)
+		.join(", ");
+}
 
 /**
- * Gets the category name for a given file extension.
- * @param {string} extension - The file extension (without dot).
- * @returns {string|null} The category name if found, otherwise null.
+ * Options accepted on the command line: the sorter's options plus output modes.
+ * @typedef {import("./lib/sorter.js").SortOptions & {
+ *   verbose?: boolean,
+ *   quiet?: boolean,
+ *   json?: boolean,
+ *   recursive?: boolean,
+ *   config?: string | false
+ * }} CliOptions
  */
-export function getCategoryForExtension(extension) {
-	for (const [category, extensions] of Object.entries(CATEGORIES)) {
-		if (extensions.includes(extension.toLowerCase())) {
-			return category;
-		}
-	}
-	return null;
+
+/**
+ * Parses a comma-separated option value into trimmed, lowercase names.
+ * @param {string} value
+ * @returns {string[]}
+ */
+export function parseList(value) {
+	return value
+		.split(",")
+		.map(item => item.trim().toLowerCase())
+		.filter(Boolean);
 }
 
-async function sortFiles() {
+/**
+ * Parses --depth into a non-negative whole number.
+ * @param {string} value
+ * @returns {number}
+ */
+export function parseDepth(value) {
+	const depth = Number(value);
+	if (!/^\d+$/.test(value.trim()) || !Number.isSafeInteger(depth)) {
+		throw new InvalidArgumentError("Use a whole number, 0 or more.");
+	}
+	return depth;
+}
+
+/**
+ * Builds the object printed by --json.
+ * @param {string} targetDir
+ * @param {CliOptions} options
+ * @param {import("./lib/sorter.js").SortResult} result
+ * @param {string | null} [configPath] - The config file in use, if any.
+ */
+export function toJson(targetDir, options, result, configPath = null) {
+	return {
+		directory: path.resolve(targetDir),
+		mode: options.revert ? "revert" : "sort",
+		dryRun: Boolean(options.dryRun),
+		config: configPath,
+		...result,
+	};
+}
+
+/**
+ * Prints a finished run for a person. --quiet limits this to warnings and
+ * errors; --verbose lists every move, not just the planned ones of a dry run.
+ * @param {import("./lib/sorter.js").SortResult} result
+ * @param {CliOptions} options
+ * @param {import("ora").Ora | null} spinner - Null when output is suppressed.
+ * @param {string | null} configPath - The config file in use, if any.
+ */
+function printReport(result, options, spinner, configPath) {
+	// Stop the spinner before printing so the output doesn't interleave
+	spinner?.stop();
+
+	if (configPath && !options.quiet) {
+		console.log(chalk.gray(`Using config: ${configPath}`));
+	}
+
+	if (!options.quiet && (options.dryRun || options.verbose)) {
+		const verb = options.dryRun
+			? options.revert
+				? "Would move back"
+				: "Would move"
+			: options.revert
+				? "Moved back"
+				: "Moved";
+		for (const { from, to } of result.actions) {
+			console.log(chalk.blue(`${verb}: ${from} → ${to}`));
+		}
+	}
+
+	for (const warning of result.warnings) {
+		console.warn(chalk.yellow(`Warning: ${warning}`));
+	}
+
+	if (result.errors.length > 0) {
+		const count = result.errors.length;
+		if (!options.quiet) {
+			console.log(
+				chalk.yellow(`Finished with ${count} error${count === 1 ? "" : "s"}:`),
+			);
+		}
+		for (const { file, message } of result.errors) {
+			console.error(chalk.red(`  ${file}: ${message}`));
+		}
+		if (!options.quiet) {
+			console.log(
+				chalk.green(`${result.moved} moved, ${result.skipped} skipped`),
+			);
+		}
+	} else if (options.dryRun) {
+		spinner?.succeed(
+			chalk.green(
+				`Dry run complete. Would ${options.revert ? "revert" : "move"} ${
+					result.moved
+				} files.`,
+			),
+		);
+	} else {
+		spinner?.succeed(
+			chalk.green(
+				`Successfully ${options.revert ? "reverted" : "sorted"} ${
+					result.moved
+				} files (${result.skipped} skipped)`,
+			),
+		);
+	}
+
+	const unknown = formatUnknown(result.unknown);
+	if (unknown && !options.revert && !options.quiet) {
+		console.log(chalk.gray(`Left in place (no matching category): ${unknown}`));
+	}
+}
+
+/**
+ * Runs the CLI: parses arguments, sorts or reverts, and prints the outcome.
+ * Failures set process.exitCode rather than exiting, so callers stay in control.
+ * @param {string[]} [argv] - Full argv, including the node and script entries.
+ * @returns {Promise<void>}
+ */
+export async function main(argv = process.argv) {
+	const program = new Command();
+
+	program
+		.name("sort-files")
+		.version(getPackageConfig().version)
+		.description("A CLI tool to sort files into predefined categories")
+		.argument("[dir]", "Directory to sort (defaults to current directory)")
+		.option("-d, --dry-run", "Show what would be done without making changes")
+		.option(
+			"-r, --revert",
+			"Undo the last sort(s), using the recorded manifest when available",
+		)
+		.option("-f, --force", "Overwrite existing files instead of renaming")
+		.addOption(
+			new Option(
+				"--include <categories>",
+				"Only sort these categories (comma-separated, e.g. images,documents)",
+			)
+				.argParser(parseList)
+				.conflicts("revert"),
+		)
+		.addOption(
+			new Option(
+				"--exclude <categories>",
+				"Never sort these categories (comma-separated, e.g. code)",
+			)
+				.argParser(parseList)
+				.conflicts("revert"),
+		)
+		.addOption(
+			new Option(
+				"-R, --recursive",
+				"Also sort files in subfolders, into category folders beside them",
+			).conflicts("revert"),
+		)
+		.addOption(
+			new Option(
+				"--depth <levels>",
+				"Limit how many subfolder levels --recursive descends (implies --recursive)",
+			)
+				.argParser(parseDepth)
+				.conflicts("revert"),
+		)
+		.option(
+			"--config <path>",
+			"Read custom categories from this file instead of .sortfilesrc.json",
+		)
+		.option("--no-config", "Ignore any .sortfilesrc.json")
+		.option("--include-hidden", "Also sort hidden files (dotfiles)")
+		.option("-y, --yes", "Allow running on a root or home directory")
+		.addOption(
+			new Option("-v, --verbose", "List every file moved").conflicts([
+				"quiet",
+				"json",
+			]),
+		)
+		.addOption(
+			new Option("-q, --quiet", "Only print warnings and errors").conflicts([
+				"verbose",
+				"json",
+			]),
+		)
+		.addOption(
+			new Option("--json", "Print the result as JSON for scripts").conflicts([
+				"verbose",
+				"quiet",
+			]),
+		);
+
+	program.parse(argv);
+
+	/** @type {CliOptions} */
+	const options = program.opts();
+	if (options.depth === undefined && options.recursive) {
+		options.depth = Infinity;
+	}
+	const targetDir = program.args[0] || process.cwd();
+	const spinner =
+		options.json || options.quiet
+			? null
+			: ora(options.revert ? "Reverting files..." : "Sorting files...").start();
+
 	try {
-		const targetDir = program.args[0] || process.cwd();
-		const spinner = ora(
-			program.opts().revert ? "Reverting files..." : "Sorting files..."
-		).start();
+		const config =
+			options.config === false
+				? null
+				: await loadConfig(targetDir, {
+						configPath: options.config,
+					});
+		const result = await sortFiles(targetDir, {
+			...options,
+			categories: config?.categories,
+		});
 
-		if (!(await fs.pathExists(targetDir))) {
-			spinner.fail(chalk.red(`Directory not found: ${targetDir}`));
-			process.exit(1);
+		if (result.errors.length > 0) {
+			process.exitCode = 1;
 		}
 
-		const files = await fs.readdir(targetDir, { withFileTypes: true });
-		let moveCount = 0;
-		let skipCount = 0;
-
-		if (program.opts().revert) {
-			// Only revert predefined category folders
-			for (const category of Object.keys(CATEGORIES)) {
-				const categoryPath = path.join(targetDir, category);
-
-				// Skip if category folder doesn't exist
-				if (!(await fs.pathExists(categoryPath))) {
-					continue;
-				}
-
-				const categoryFiles = await fs.readdir(categoryPath);
-
-				for (const file of categoryFiles) {
-					const sourcePath = path.join(categoryPath, file);
-					const destinationPath = path.join(targetDir, file);
-
-					if (program.opts().dryRun) {
-						console.log(
-							chalk.blue(
-								`Would move back: ${path.join(category, file)} → ${file}`
-							)
-						);
-						moveCount++;
-						continue;
-					}
-
-					// Move file back to root directory
-					await fs.move(sourcePath, destinationPath, { overwrite: true });
-					moveCount++;
-				}
-
-				// Remove the empty category folder
-				if (!program.opts().dryRun) {
-					await fs.remove(categoryPath);
-				}
-			}
-		} else {
-			// Sorting logic
-			for (const file of files) {
-				// Skip if it's not a file or if it's inside a directory
-				if (!file.isFile()) {
-					skipCount++;
-					continue;
-				}
-
-				const fileExtension = path.extname(file.name).slice(1).toLowerCase();
-				const category = getCategoryForExtension(fileExtension);
-
-				// Skip if no matching category or if it's our script
-				if (!category || file.name === "sort-cli.js") {
-					skipCount++;
-					continue;
-				}
-
-				const categoryFolder = path.join(targetDir, category);
-				const sourcePath = path.join(targetDir, file.name);
-				const destinationPath = path.join(categoryFolder, file.name);
-
-				if (program.opts().dryRun) {
-					console.log(
-						chalk.blue(
-							`Would move: ${file.name} → ${path.join(category, file.name)}`
-						)
-					);
-					moveCount++;
-					continue;
-				}
-
-				await fs.ensureDir(categoryFolder);
-				if (sourcePath !== destinationPath) {
-					await fs.move(sourcePath, destinationPath, { overwrite: true });
-					moveCount++;
-				} else {
-					skipCount++;
-				}
-			}
-		}
-
-		if (program.opts().dryRun) {
-			spinner.succeed(
-				chalk.green(
-					`Dry run complete. Would ${
-						program.opts().revert ? "revert" : "move"
-					} ${moveCount} files.`
-				)
+		if (options.json) {
+			console.log(
+				JSON.stringify(
+					toJson(targetDir, options, result, config?.path ?? null),
+					null,
+					2,
+				),
 			);
 		} else {
-			spinner.succeed(
-				chalk.green(
-					`Successfully ${
-						program.opts().revert ? "reverted" : "sorted"
-					} ${moveCount} files (${skipCount} skipped)`
-				)
-			);
+			printReport(result, options, spinner, config?.path ?? null);
 		}
 	} catch (error) {
-		console.error(chalk.red("Error:", error.message));
-		process.exit(1);
+		const message = error instanceof Error ? error.message : String(error);
+		process.exitCode = 1;
+
+		if (options.json) {
+			console.log(JSON.stringify({ error: message }, null, 2));
+		} else if (spinner) {
+			spinner.fail(chalk.red(message));
+		} else {
+			console.error(chalk.red(message));
+		}
 	}
 }
 
-// Run the tool if this file is being executed directly
-if (
-	process.argv[1] &&
-	(process.argv[1].endsWith("sort-cli.js") ||
-		process.argv[1].endsWith("sort-files"))
-) {
-	sortFiles();
+/**
+ * True when this module is the process entry point, including when it is
+ * launched through an npm-installed symlink (where argv[1] is the link path).
+ * @returns {boolean}
+ */
+function isMainModule() {
+	if (!process.argv[1]) return false;
+	try {
+		return fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+	} catch {
+		return false;
+	}
 }
 
-export { sortFiles };
+if (isMainModule()) {
+	main();
+}
