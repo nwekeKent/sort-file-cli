@@ -115,8 +115,8 @@ function printReport(result, options, spinner, configPath) {
 				? "Would move back"
 				: "Would move"
 			: options.revert
-			? "Moved back"
-			: "Moved";
+				? "Moved back"
+				: "Moved";
 		for (const { from, to } of result.actions) {
 			console.log(chalk.blue(`${verb}: ${from} → ${to}`));
 		}
@@ -130,7 +130,7 @@ function printReport(result, options, spinner, configPath) {
 		const count = result.errors.length;
 		if (!options.quiet) {
 			console.log(
-				chalk.yellow(`Finished with ${count} error${count === 1 ? "" : "s"}:`)
+				chalk.yellow(`Finished with ${count} error${count === 1 ? "" : "s"}:`),
 			);
 		}
 		for (const { file, message } of result.errors) {
@@ -138,7 +138,7 @@ function printReport(result, options, spinner, configPath) {
 		}
 		if (!options.quiet) {
 			console.log(
-				chalk.green(`${result.moved} moved, ${result.skipped} skipped`)
+				chalk.green(`${result.moved} moved, ${result.skipped} skipped`),
 			);
 		}
 	} else if (options.dryRun) {
@@ -146,16 +146,16 @@ function printReport(result, options, spinner, configPath) {
 			chalk.green(
 				`Dry run complete. Would ${options.revert ? "revert" : "move"} ${
 					result.moved
-				} files.`
-			)
+				} files.`,
+			),
 		);
 	} else {
 		spinner?.succeed(
 			chalk.green(
 				`Successfully ${options.revert ? "reverted" : "sorted"} ${
 					result.moved
-				} files (${result.skipped} skipped)`
-			)
+				} files (${result.skipped} skipped)`,
+			),
 		);
 	}
 
@@ -181,42 +181,42 @@ export async function main(argv = process.argv) {
 		.option("-d, --dry-run", "Show what would be done without making changes")
 		.option(
 			"-r, --revert",
-			"Undo the last sort(s), using the recorded manifest when available"
+			"Undo the last sort(s), using the recorded manifest when available",
 		)
 		.option("-f, --force", "Overwrite existing files instead of renaming")
 		.addOption(
 			new Option(
 				"--include <categories>",
-				"Only sort these categories (comma-separated, e.g. images,documents)"
+				"Only sort these categories (comma-separated, e.g. images,documents)",
 			)
 				.argParser(parseList)
-				.conflicts("revert")
+				.conflicts("revert"),
 		)
 		.addOption(
 			new Option(
 				"--exclude <categories>",
-				"Never sort these categories (comma-separated, e.g. code)"
+				"Never sort these categories (comma-separated, e.g. code)",
 			)
 				.argParser(parseList)
-				.conflicts("revert")
+				.conflicts("revert"),
 		)
 		.addOption(
 			new Option(
 				"-R, --recursive",
-				"Also sort files in subfolders, into category folders beside them"
-			).conflicts("revert")
+				"Also sort files in subfolders, into category folders beside them",
+			).conflicts("revert"),
 		)
 		.addOption(
 			new Option(
 				"--depth <levels>",
-				"Limit how many subfolder levels --recursive descends (implies --recursive)"
+				"Limit how many subfolder levels --recursive descends (implies --recursive)",
 			)
 				.argParser(parseDepth)
-				.conflicts("revert")
+				.conflicts("revert"),
 		)
 		.option(
 			"--config <path>",
-			"Read custom categories from this file instead of .sortfilesrc.json"
+			"Read custom categories from this file instead of .sortfilesrc.json",
 		)
 		.option("--no-config", "Ignore any .sortfilesrc.json")
 		.option("--include-hidden", "Also sort hidden files (dotfiles)")
@@ -225,19 +225,19 @@ export async function main(argv = process.argv) {
 			new Option("-v, --verbose", "List every file moved").conflicts([
 				"quiet",
 				"json",
-			])
+			]),
 		)
 		.addOption(
 			new Option("-q, --quiet", "Only print warnings and errors").conflicts([
 				"verbose",
 				"json",
-			])
+			]),
 		)
 		.addOption(
 			new Option("--json", "Print the result as JSON for scripts").conflicts([
 				"verbose",
 				"quiet",
-			])
+			]),
 		);
 
 	program.parse(argv);
@@ -259,7 +259,7 @@ export async function main(argv = process.argv) {
 				? null
 				: await loadConfig(targetDir, {
 						configPath: options.config,
-				  });
+					});
 		const result = await sortFiles(targetDir, {
 			...options,
 			categories: config?.categories,
@@ -274,8 +274,8 @@ export async function main(argv = process.argv) {
 				JSON.stringify(
 					toJson(targetDir, options, result, config?.path ?? null),
 					null,
-					2
-				)
+					2,
+				),
 			);
 		} else {
 			printReport(result, options, spinner, config?.path ?? null);
@@ -302,9 +302,7 @@ export async function main(argv = process.argv) {
 function isMainModule() {
 	if (!process.argv[1]) return false;
 	try {
-		return (
-			fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)
-		);
+		return fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
 	} catch {
 		return false;
 	}

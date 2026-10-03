@@ -6,7 +6,10 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const CLI = path.join(path.dirname(fileURLToPath(import.meta.url)), "sort-cli.js");
+const CLI = path.join(
+	path.dirname(fileURLToPath(import.meta.url)),
+	"sort-cli.js",
+);
 // Every run gets an empty home directory, so a developer's own
 // ~/.sortfilesrc.json can never leak into these tests.
 let fakeHome;
@@ -32,7 +35,7 @@ afterEach(() => {
 describe("formatUnknown", () => {
 	it("lists the most common extensions first", () => {
 		expect(formatUnknown({ foo: 1, xyz: 3, "": 2 })).toBe(
-			".xyz (3), no extension (2), .foo (1)"
+			".xyz (3), no extension (2), .foo (1)",
 		);
 	});
 
@@ -106,7 +109,7 @@ describe("CLI selection options", () => {
 
 			expect(runWithEnv(env, tmp, "--yes").status).toBe(0);
 			expect(fs.existsSync(path.join(tmp, "images", "a.jpg"))).toBe(true);
-		}
+		},
 	);
 });
 
@@ -230,7 +233,7 @@ describe("CLI recursion", () => {
 
 		expect(fs.existsSync(path.join(tmp, "trip", "images", "a.jpg"))).toBe(true);
 		expect(
-			fs.existsSync(path.join(tmp, "trip", "day1", "documents", "b.pdf"))
+			fs.existsSync(path.join(tmp, "trip", "day1", "documents", "b.pdf")),
 		).toBe(true);
 	});
 
@@ -244,7 +247,7 @@ describe("CLI recursion", () => {
 	it("rejects a bad depth and combining with --revert", () => {
 		expect(run(tmp, "--depth", "x").status).toBe(1);
 		expect(run(tmp, "--recursive", "--revert").stderr).toContain(
-			"cannot be used with"
+			"cannot be used with",
 		);
 		expect(fs.existsSync(path.join(tmp, "trip", "a.jpg"))).toBe(true);
 	});
@@ -280,7 +283,7 @@ describe("toJson", () => {
 
 	it("includes the config file in use", () => {
 		expect(toJson("/x", {}, result, "/x/.sortfilesrc.json").config).toBe(
-			"/x/.sortfilesrc.json"
+			"/x/.sortfilesrc.json",
 		);
 	});
 
@@ -392,7 +395,7 @@ describe("CLI", () => {
 		const { stdout } = run(tmp);
 
 		expect(stdout).toContain(
-			"Left in place (no matching category): .xyz (2), no extension (1)"
+			"Left in place (no matching category): .xyz (2), no extension (1)",
 		);
 		expect(fs.existsSync(path.join(tmp, "a.xyz"))).toBe(true);
 	});
@@ -405,7 +408,7 @@ describe("CLI", () => {
 
 	it("prints the package version", () => {
 		const { version } = JSON.parse(
-			fs.readFileSync(path.join(path.dirname(CLI), "package.json"), "utf8")
+			fs.readFileSync(path.join(path.dirname(CLI), "package.json"), "utf8"),
 		);
 		expect(run("--version").stdout.trim()).toBe(version);
 	});
