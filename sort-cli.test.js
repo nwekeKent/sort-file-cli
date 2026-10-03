@@ -7,22 +7,26 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const CLI = path.join(path.dirname(fileURLToPath(import.meta.url)), "sort-cli.js");
-const run = (...args) =>
-	spawnSync(process.execPath, [CLI, ...args], { encoding: "utf8" });
+// Every run gets an empty home directory, so a developer's own
+// ~/.sortfilesrc.json can never leak into these tests.
+let fakeHome;
 const runWithEnv = (env, ...args) =>
 	spawnSync(process.execPath, [CLI, ...args], {
 		encoding: "utf8",
-		env: { ...process.env, ...env },
+		env: { ...process.env, HOME: fakeHome, USERPROFILE: fakeHome, ...env },
 	});
+const run = (...args) => runWithEnv({}, ...args);
 
 let tmp;
 
 beforeEach(() => {
 	tmp = fs.mkdtempSync(path.join(os.tmpdir(), "sort-files-"));
+	fakeHome = fs.mkdtempSync(path.join(os.tmpdir(), "sort-files-home-"));
 });
 
 afterEach(() => {
 	fs.rmSync(tmp, { recursive: true, force: true });
+	fs.rmSync(fakeHome, { recursive: true, force: true });
 });
 
 describe("formatUnknown", () => {
@@ -93,7 +97,7 @@ describe("CLI selection options", () => {
 	it.skipIf(process.platform === "win32")(
 		"refuses the home directory without --yes, and proceeds with it",
 		() => {
-			const env = { HOME: tmp };
+			const env = { HOME: tmp, USERPROFILE: tmp };
 
 			const refused = runWithEnv(env, tmp);
 			expect(refused.status).toBe(1);
@@ -114,6 +118,103 @@ describe("parseDepth", () => {
 
 	it.each(["-1", "1.5", "abc", ""])("rejects %j", value => {
 		expect(() => parseDepth(value)).toThrow("whole number");
+	});
+});
+
+describe("CLI config", () => {
+	const CONFIG = ".sortfilesrc.json";
+	const writeConfig = (where, categories) =>
+		fs.writeFileSync(path.join(where, CONFIG), JSON.stringify({ categories }));
+
+	beforeEach(() => {
+		fs.writeFileSync(path.join(tmp, "march.inv"), "");
+		fs.writeFileSync(path.join(tmp, "todo.md"), "");
+	});
+
+	it("applies .sortfilesrc.json from the target directory", () => {
+		writeConfig(tmp, { invoices: ["inv"], notes: ["md"] });
+
+		const { stdout, status } = run(tmp);
+
+		expect(status).toBe(0);
+		expect(stdout).toContain(`Using config: ${path.join(tmp, CONFIG)}`);
+		expect(fs.existsSync(path.join(tmp, "invoices", "march.inv"))).toBe(true);
+		expect(fs.existsSync(path.join(tmp, "notes", "todo.md"))).toBe(true);
+		expect(fs.existsSync(path.join(tmp, CONFIG))).toBe(true);
+	});
+
+	it("falls back to the config in $HOME", () => {
+		const home = fs.mkdtempSync(path.join(tmp, "home-"));
+		writeConfig(home, { invoices: ["inv"] });
+		const target = fs.mkdtempSync(path.join(tmp, "target-"));
+		fs.writeFileSync(path.join(target, "a.inv"), "");
+
+		runWithEnv({ HOME: home, USERPROFILE: home }, target);
+
+		expect(fs.existsSync(path.join(target, "invoices", "a.inv"))).toBe(true);
+	});
+
+	it("--config uses an explicit file", () => {
+		const file = path.join(tmp, "custom.json");
+		fs.writeFileSync(file, JSON.stringify({ categories: { bills: ["inv"] } }));
+
+		run(tmp, "--config", file);
+
+		expect(fs.existsSync(path.join(tmp, "bills", "march.inv"))).toBe(true);
+	});
+
+	it("--no-config ignores config files", () => {
+		writeConfig(tmp, { invoices: ["inv"] });
+
+		const { stdout } = run(tmp, "--no-config");
+
+		expect(stdout).not.toContain("Using config");
+		expect(fs.existsSync(path.join(tmp, "march.inv"))).toBe(true);
+		expect(fs.existsSync(path.join(tmp, "documents", "todo.md"))).toBe(true);
+	});
+
+	it("--include accepts a custom category", () => {
+		writeConfig(tmp, { invoices: ["inv"] });
+
+		run(tmp, "--include", "invoices");
+
+		expect(fs.existsSync(path.join(tmp, "invoices", "march.inv"))).toBe(true);
+		expect(fs.existsSync(path.join(tmp, "todo.md"))).toBe(true);
+	});
+
+	it("reverts a sort that used a config", () => {
+		writeConfig(tmp, { invoices: ["inv"] });
+		run(tmp);
+
+		expect(run(tmp, "--revert").status).toBe(0);
+
+		expect(fs.existsSync(path.join(tmp, "march.inv"))).toBe(true);
+		expect(fs.existsSync(path.join(tmp, "invoices"))).toBe(false);
+	});
+
+	it("--json reports the config in use", () => {
+		writeConfig(tmp, { invoices: ["inv"] });
+
+		const parsed = JSON.parse(run(tmp, "--json", "--dry-run").stdout);
+
+		expect(parsed.config).toBe(path.join(tmp, CONFIG));
+	});
+
+	it("fails clearly on an invalid config and moves nothing", () => {
+		fs.writeFileSync(path.join(tmp, CONFIG), JSON.stringify({ category: {} }));
+
+		const { status, stdout, stderr } = run(tmp);
+
+		expect(status).toBe(1);
+		expect(stdout + stderr).toContain('unknown key "category"');
+		expect(fs.existsSync(path.join(tmp, "todo.md"))).toBe(true);
+	});
+
+	it("fails when --config points at a missing file", () => {
+		const { status, stdout, stderr } = run(tmp, "--config", "nope.json");
+
+		expect(status).toBe(1);
+		expect(stdout + stderr).toContain("Config file not found");
 	});
 });
 
@@ -172,8 +273,15 @@ describe("toJson", () => {
 			directory: path.resolve("/x"),
 			mode: "sort",
 			dryRun: false,
+			config: null,
 			...result,
 		});
+	});
+
+	it("includes the config file in use", () => {
+		expect(toJson("/x", {}, result, "/x/.sortfilesrc.json").config).toBe(
+			"/x/.sortfilesrc.json"
+		);
 	});
 
 	it("describes a dry-run revert", () => {
@@ -351,7 +459,9 @@ describe("CLI", () => {
 		const target = fs.mkdtempSync(path.join(tmp, "target-"));
 		fs.writeFileSync(path.join(target, "a.pdf"), "x");
 
-		execFileSync(process.execPath, [link, target]);
+		execFileSync(process.execPath, [link, target], {
+			env: { ...process.env, HOME: fakeHome, USERPROFILE: fakeHome },
+		});
 
 		expect(fs.existsSync(path.join(target, "documents", "a.pdf"))).toBe(true);
 	});

@@ -7,6 +7,7 @@ import { Command, InvalidArgumentError, Option } from "commander";
 import chalk from "chalk";
 import ora from "ora";
 import { fileURLToPath } from "url";
+import { loadConfig } from "./lib/config.js";
 import { sortFiles } from "./lib/sorter.js";
 
 export { CATEGORIES, getCategoryForExtension } from "./lib/categories.js";
@@ -45,7 +46,8 @@ export function formatUnknown(unknown) {
  *   verbose?: boolean,
  *   quiet?: boolean,
  *   json?: boolean,
- *   recursive?: boolean
+ *   recursive?: boolean,
+ *   config?: string | false
  * }} CliOptions
  */
 
@@ -79,12 +81,14 @@ export function parseDepth(value) {
  * @param {string} targetDir
  * @param {CliOptions} options
  * @param {import("./lib/sorter.js").SortResult} result
+ * @param {string | null} [configPath] - The config file in use, if any.
  */
-export function toJson(targetDir, options, result) {
+export function toJson(targetDir, options, result, configPath = null) {
 	return {
 		directory: path.resolve(targetDir),
 		mode: options.revert ? "revert" : "sort",
 		dryRun: Boolean(options.dryRun),
+		config: configPath,
 		...result,
 	};
 }
@@ -95,10 +99,15 @@ export function toJson(targetDir, options, result) {
  * @param {import("./lib/sorter.js").SortResult} result
  * @param {CliOptions} options
  * @param {import("ora").Ora | null} spinner - Null when output is suppressed.
+ * @param {string | null} configPath - The config file in use, if any.
  */
-function printReport(result, options, spinner) {
+function printReport(result, options, spinner, configPath) {
 	// Stop the spinner before printing so the output doesn't interleave
 	spinner?.stop();
+
+	if (configPath && !options.quiet) {
+		console.log(chalk.gray(`Using config: ${configPath}`));
+	}
 
 	if (!options.quiet && (options.dryRun || options.verbose)) {
 		const verb = options.dryRun
@@ -205,6 +214,11 @@ export async function main(argv = process.argv) {
 				.argParser(parseDepth)
 				.conflicts("revert")
 		)
+		.option(
+			"--config <path>",
+			"Read custom categories from this file instead of .sortfilesrc.json"
+		)
+		.option("--no-config", "Ignore any .sortfilesrc.json")
 		.option("--include-hidden", "Also sort hidden files (dotfiles)")
 		.option("-y, --yes", "Allow running on a root or home directory")
 		.addOption(
@@ -240,16 +254,31 @@ export async function main(argv = process.argv) {
 			: ora(options.revert ? "Reverting files..." : "Sorting files...").start();
 
 	try {
-		const result = await sortFiles(targetDir, options);
+		const config =
+			options.config === false
+				? null
+				: await loadConfig(targetDir, {
+						configPath: options.config,
+				  });
+		const result = await sortFiles(targetDir, {
+			...options,
+			categories: config?.categories,
+		});
 
 		if (result.errors.length > 0) {
 			process.exitCode = 1;
 		}
 
 		if (options.json) {
-			console.log(JSON.stringify(toJson(targetDir, options, result), null, 2));
+			console.log(
+				JSON.stringify(
+					toJson(targetDir, options, result, config?.path ?? null),
+					null,
+					2
+				)
+			);
 		} else {
-			printReport(result, options, spinner);
+			printReport(result, options, spinner, config?.path ?? null);
 		}
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
