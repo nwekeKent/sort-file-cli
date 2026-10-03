@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// @ts-check
 
 import fs from "fs-extra";
 import path from "path";
@@ -7,7 +8,29 @@ import chalk from "chalk";
 import ora from "ora";
 import { fileURLToPath } from "url";
 
-// Helper to get package info
+/**
+ * @typedef {keyof typeof CATEGORIES} CategoryName
+ */
+
+/**
+ * Options accepted from the command line.
+ * @typedef {Object} SortOptions
+ * @property {boolean} [dryRun] - Show what would happen without moving files.
+ * @property {boolean} [revert] - Move files back out of category folders.
+ * @property {boolean} [force] - Overwrite existing files instead of renaming.
+ */
+
+/**
+ * A move that failed, reported in the end-of-run summary.
+ * @typedef {Object} MoveError
+ * @property {string} file - Source path relative to the target directory.
+ * @property {string} message - The underlying error message.
+ */
+
+/**
+ * Reads the package version from package.json.
+ * @returns {{ version: string }} The version, or "1.0.0" if it can't be read.
+ */
 function getPackageConfig() {
 	try {
 		const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -18,7 +41,10 @@ function getPackageConfig() {
 	}
 }
 
-// Predefined categories and their extensions
+/**
+ * Predefined categories mapped to their file extensions (lowercase, no dot).
+ * @type {Record<string, string[]>}
+ */
 export const CATEGORIES = {
 	images: [
 		"jpg",
@@ -100,10 +126,13 @@ program
 	.option("-f, --force", "Overwrite existing files instead of renaming")
 	.parse(process.argv);
 
+/** @type {() => SortOptions} */
+const getOptions = () => program.opts();
+
 /**
  * Gets the category name for a given file extension.
  * @param {string} extension - The file extension (without dot).
- * @returns {string|null} The category name if found, otherwise null.
+ * @returns {string | null} The category name if found, otherwise null.
  */
 export function getCategoryForExtension(extension) {
 	for (const [category, extensions] of Object.entries(CATEGORIES)) {
@@ -136,11 +165,16 @@ export async function getAvailablePath(destinationPath) {
 	return candidate;
 }
 
+/**
+ * Sorts (or reverts) files in the directory given on the command line,
+ * defaulting to the current working directory.
+ * @returns {Promise<void>}
+ */
 async function sortFiles() {
 	try {
 		const targetDir = program.args[0] || process.cwd();
 		const spinner = ora(
-			program.opts().revert ? "Reverting files..." : "Sorting files..."
+			getOptions().revert ? "Reverting files..." : "Sorting files..."
 		).start();
 
 		if (!(await fs.pathExists(targetDir))) {
@@ -158,24 +192,30 @@ async function sortFiles() {
 		const files = await fs.readdir(targetDir, { withFileTypes: true });
 		let moveCount = 0;
 		let skipCount = 0;
+		/** @type {MoveError[]} */
 		const errors = [];
 
-		// Move a single file, recording a failure instead of aborting the run
+		/**
+		 * Moves a single file, recording a failure instead of aborting the run.
+		 * @param {string} sourcePath
+		 * @param {string} destinationPath
+		 * @returns {Promise<void>}
+		 */
 		const moveFile = async (sourcePath, destinationPath) => {
 			try {
 				await fs.move(sourcePath, destinationPath, {
-					overwrite: Boolean(program.opts().force),
+					overwrite: Boolean(getOptions().force),
 				});
 				moveCount++;
 			} catch (error) {
 				errors.push({
 					file: path.relative(targetDir, sourcePath),
-					message: error.message,
+					message: error instanceof Error ? error.message : String(error),
 				});
 			}
 		};
 
-		if (program.opts().revert) {
+		if (getOptions().revert) {
 			// Only revert predefined category folders
 			for (const category of Object.keys(CATEGORIES)) {
 				const categoryPath = path.join(targetDir, category);
@@ -198,11 +238,11 @@ async function sortFiles() {
 
 					const sourcePath = path.join(categoryPath, entry.name);
 					const desiredPath = path.join(targetDir, entry.name);
-					const destinationPath = program.opts().force
+					const destinationPath = getOptions().force
 						? desiredPath
 						: await getAvailablePath(desiredPath);
 
-					if (program.opts().dryRun) {
+					if (getOptions().dryRun) {
 						console.log(
 							chalk.blue(
 								`Would move back: ${path.join(category, entry.name)} → ${path.relative(
@@ -221,7 +261,7 @@ async function sortFiles() {
 
 				// Remove the category folder only if it is now empty
 				if (
-					!program.opts().dryRun &&
+					!getOptions().dryRun &&
 					(await fs.readdir(categoryPath)).length === 0
 				) {
 					await fs.rmdir(categoryPath);
@@ -248,11 +288,11 @@ async function sortFiles() {
 				const categoryFolder = path.join(targetDir, category);
 				const sourcePath = path.join(targetDir, file.name);
 				const desiredPath = path.join(categoryFolder, file.name);
-				const destinationPath = program.opts().force
+				const destinationPath = getOptions().force
 					? desiredPath
 					: await getAvailablePath(desiredPath);
 
-				if (program.opts().dryRun) {
+				if (getOptions().dryRun) {
 					console.log(
 						chalk.blue(
 							`Would move: ${file.name} → ${path.relative(
@@ -287,11 +327,11 @@ async function sortFiles() {
 				chalk.green(`${moveCount} moved, ${skipCount} skipped`)
 			);
 			process.exitCode = 1;
-		} else if (program.opts().dryRun) {
+		} else if (getOptions().dryRun) {
 			spinner.succeed(
 				chalk.green(
 					`Dry run complete. Would ${
-						program.opts().revert ? "revert" : "move"
+						getOptions().revert ? "revert" : "move"
 					} ${moveCount} files.`
 				)
 			);
@@ -299,13 +339,18 @@ async function sortFiles() {
 			spinner.succeed(
 				chalk.green(
 					`Successfully ${
-						program.opts().revert ? "reverted" : "sorted"
+						getOptions().revert ? "reverted" : "sorted"
 					} ${moveCount} files (${skipCount} skipped)`
 				)
 			);
 		}
 	} catch (error) {
-		console.error(chalk.red("Error:", error.message));
+		console.error(
+			chalk.red(
+				"Error:",
+				error instanceof Error ? error.message : String(error)
+			)
+		);
 		process.exit(1);
 	}
 }
