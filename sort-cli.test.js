@@ -406,6 +406,10 @@ describe("CLI", () => {
 		expect(run(tmp).stdout).not.toContain("Left in place");
 	});
 
+	it("names itself after the installed command in --help", () => {
+		expect(run("--help").stdout).toContain("Usage: sort-files [options] [dir]");
+	});
+
 	it("prints the package version", () => {
 		const { version } = JSON.parse(
 			fs.readFileSync(path.join(path.dirname(CLI), "package.json"), "utf8"),

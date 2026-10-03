@@ -175,6 +175,7 @@ export async function main(argv = process.argv) {
 	const program = new Command();
 
 	program
+		.name("sort-files")
 		.version(getPackageConfig().version)
 		.description("A CLI tool to sort files into predefined categories")
 		.argument("[dir]", "Directory to sort (defaults to current directory)")
