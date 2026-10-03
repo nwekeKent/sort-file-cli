@@ -456,16 +456,20 @@ describe("CLI", () => {
 		expect(stdout + stderr).toContain("Directory not found");
 	});
 
-	it("runs when launched through a symlink (as npm bin links do)", () => {
-		const link = path.join(tmp, "some-other-name");
-		fs.symlinkSync(CLI, link);
-		const target = fs.mkdtempSync(path.join(tmp, "target-"));
-		fs.writeFileSync(path.join(target, "a.pdf"), "x");
+	// npm uses .cmd shims on Windows, and creating symlinks there needs privileges
+	it.skipIf(process.platform === "win32")(
+		"runs when launched through a symlink (as npm bin links do)",
+		() => {
+			const link = path.join(tmp, "some-other-name");
+			fs.symlinkSync(CLI, link);
+			const target = fs.mkdtempSync(path.join(tmp, "target-"));
+			fs.writeFileSync(path.join(target, "a.pdf"), "x");
 
-		execFileSync(process.execPath, [link, target], {
-			env: { ...process.env, HOME: fakeHome, USERPROFILE: fakeHome },
-		});
+			execFileSync(process.execPath, [link, target], {
+				env: { ...process.env, HOME: fakeHome, USERPROFILE: fakeHome },
+			});
 
-		expect(fs.existsSync(path.join(target, "documents", "a.pdf"))).toBe(true);
-	});
+			expect(fs.existsSync(path.join(target, "documents", "a.pdf"))).toBe(true);
+		},
+	);
 });
