@@ -97,6 +97,7 @@ program
 	.argument("[dir]", "Directory to sort (defaults to current directory)")
 	.option("-d, --dry-run", "Show what would be done without making changes")
 	.option("-r, --revert", "Revert files back to original directory")
+	.option("-f, --force", "Overwrite existing files instead of renaming")
 	.parse(process.argv);
 
 /**
@@ -111,6 +112,28 @@ export function getCategoryForExtension(extension) {
 		}
 	}
 	return null;
+}
+
+/**
+ * Returns a destination path that does not collide with an existing file,
+ * appending " (1)", " (2)", ... before the extension when needed.
+ * @param {string} destinationPath - The desired destination path.
+ * @returns {Promise<string>} A path that does not currently exist.
+ */
+export async function getAvailablePath(destinationPath) {
+	if (!(await fs.pathExists(destinationPath))) {
+		return destinationPath;
+	}
+
+	const { dir, name, ext } = path.parse(destinationPath);
+	let counter = 1;
+	let candidate;
+	do {
+		candidate = path.join(dir, `${name} (${counter})${ext}`);
+		counter++;
+	} while (await fs.pathExists(candidate));
+
+	return candidate;
 }
 
 async function sortFiles() {
@@ -185,12 +208,18 @@ async function sortFiles() {
 
 				const categoryFolder = path.join(targetDir, category);
 				const sourcePath = path.join(targetDir, file.name);
-				const destinationPath = path.join(categoryFolder, file.name);
+				const desiredPath = path.join(categoryFolder, file.name);
+				const destinationPath = program.opts().force
+					? desiredPath
+					: await getAvailablePath(desiredPath);
 
 				if (program.opts().dryRun) {
 					console.log(
 						chalk.blue(
-							`Would move: ${file.name} → ${path.join(category, file.name)}`
+							`Would move: ${file.name} → ${path.relative(
+								targetDir,
+								destinationPath
+							)}`
 						)
 					);
 					moveCount++;
@@ -199,7 +228,9 @@ async function sortFiles() {
 
 				await fs.ensureDir(categoryFolder);
 				if (sourcePath !== destinationPath) {
-					await fs.move(sourcePath, destinationPath, { overwrite: true });
+					await fs.move(sourcePath, destinationPath, {
+						overwrite: Boolean(program.opts().force),
+					});
 					moveCount++;
 				} else {
 					skipCount++;

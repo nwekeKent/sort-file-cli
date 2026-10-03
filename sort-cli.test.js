@@ -1,7 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import fs from "fs-extra";
 import { program } from "commander";
-import { getCategoryForExtension, CATEGORIES, sortFiles } from "./sort-cli.js";
+import {
+	getCategoryForExtension,
+	getAvailablePath,
+	CATEGORIES,
+	sortFiles,
+} from "./sort-cli.js";
 
 // Mock dependencies
 vi.mock("fs-extra");
@@ -39,7 +44,7 @@ describe("sortFiles logic", () => {
 		program.args = [];
 
 		// Default fs mocks
-		fs.pathExists.mockResolvedValue(true);
+		fs.pathExists.mockImplementation(async p => p === process.cwd());
 		fs.readdir.mockResolvedValue([]);
 		fs.ensureDir.mockResolvedValue(true);
 		fs.move.mockResolvedValue(true);
@@ -89,6 +94,35 @@ describe("sortFiles logic", () => {
 		expect(fs.move).toHaveBeenCalledTimes(1);
 	});
 
+	it("should rename instead of overwriting on collision", async () => {
+		fs.readdir.mockResolvedValue([{ isFile: () => true, name: "photo.jpg" }]);
+		fs.pathExists.mockImplementation(
+			async p => p === process.cwd() || p.endsWith("photo.jpg")
+		);
+
+		await sortFiles();
+
+		expect(fs.move).toHaveBeenCalledWith(
+			expect.stringMatching(/photo\.jpg$/),
+			expect.stringMatching(/images.photo \(1\)\.jpg$/),
+			{ overwrite: false }
+		);
+	});
+
+	it("should overwrite on collision when --force is set", async () => {
+		program.opts.mockReturnValue({ force: true });
+		fs.readdir.mockResolvedValue([{ isFile: () => true, name: "photo.jpg" }]);
+		fs.pathExists.mockResolvedValue(true);
+
+		await sortFiles();
+
+		expect(fs.move).toHaveBeenCalledWith(
+			expect.stringMatching(/photo\.jpg$/),
+			expect.stringMatching(/images.photo\.jpg$/),
+			{ overwrite: true }
+		);
+	});
+
 	it("should respect dry-run flag", async () => {
 		program.opts.mockReturnValue({ dryRun: true });
 
@@ -126,5 +160,18 @@ describe("sortFiles logic", () => {
 
 		expect(fs.move).toHaveBeenCalled();
 		expect(fs.remove).toHaveBeenCalledWith(expect.stringContaining("images"));
+	});
+});
+
+describe("getAvailablePath", () => {
+	it("returns the path unchanged when it is free", async () => {
+		fs.pathExists.mockResolvedValue(false);
+		expect(await getAvailablePath("/x/a.txt")).toBe("/x/a.txt");
+	});
+
+	it("increments the counter until a free name is found", async () => {
+		const taken = new Set(["/x/a.txt", "/x/a (1).txt"]);
+		fs.pathExists.mockImplementation(async p => taken.has(p));
+		expect(await getAvailablePath("/x/a.txt")).toBe("/x/a (2).txt");
 	});
 });
