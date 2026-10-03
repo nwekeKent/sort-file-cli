@@ -40,7 +40,10 @@ export async function main(argv = process.argv) {
 		.description("A CLI tool to sort files into predefined categories")
 		.argument("[dir]", "Directory to sort (defaults to current directory)")
 		.option("-d, --dry-run", "Show what would be done without making changes")
-		.option("-r, --revert", "Revert files back to original directory")
+		.option(
+			"-r, --revert",
+			"Undo the last sort(s), using the recorded manifest when available"
+		)
 		.option("-f, --force", "Overwrite existing files instead of renaming");
 
 	program.parse(argv);
@@ -63,6 +66,10 @@ export async function main(argv = process.argv) {
 				const verb = options.revert ? "Would move back" : "Would move";
 				console.log(chalk.blue(`${verb}: ${from} → ${to}`));
 			}
+		}
+
+		for (const warning of result.warnings) {
+			console.warn(chalk.yellow(`Warning: ${warning}`));
 		}
 
 		if (result.errors.length > 0) {

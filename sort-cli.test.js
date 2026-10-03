@@ -38,6 +38,21 @@ describe("CLI", () => {
 		expect(fs.existsSync(path.join(tmp, "images"))).toBe(false);
 	});
 
+	it("only reverts files it moved, and warns when there is no manifest", () => {
+		fs.mkdirSync(path.join(tmp, "images"));
+		fs.writeFileSync(path.join(tmp, "images", "earlier.jpg"), "x");
+		fs.writeFileSync(path.join(tmp, "new.jpg"), "y");
+
+		run(tmp);
+		run(tmp, "--revert");
+		expect(fs.existsSync(path.join(tmp, "images", "earlier.jpg"))).toBe(true);
+		expect(fs.existsSync(path.join(tmp, "new.jpg"))).toBe(true);
+
+		const fallback = run(tmp, "--revert");
+		expect(fallback.stderr).toContain("No manifest found");
+		expect(fs.existsSync(path.join(tmp, "earlier.jpg"))).toBe(true);
+	});
+
 	it("prints each planned move in a dry run without touching files", () => {
 		fs.writeFileSync(path.join(tmp, "photo.jpg"), "x");
 
