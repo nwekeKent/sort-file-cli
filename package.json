@@ -7,8 +7,17 @@
   },
   "description": "A CLI tool to sort files into predefined categories",
   "type": "module",
+  "main": "./sort-cli.js",
   "bin": {
     "sort-files": "./sort-cli.js"
+  },
+  "files": [
+    "sort-cli.js",
+    "lib/",
+    "!lib/**/*.test.js"
+  ],
+  "engines": {
+    "node": ">=20"
   },
   "keywords": [
     "cli",
