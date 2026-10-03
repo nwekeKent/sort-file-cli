@@ -47,6 +47,7 @@ describe("sortFiles logic", () => {
 
 		// Default fs mocks
 		fs.pathExists.mockImplementation(async p => p === process.cwd());
+		fs.stat.mockResolvedValue({ isDirectory: () => true });
 		fs.readdir.mockResolvedValue([]);
 		fs.ensureDir.mockResolvedValue(true);
 		fs.move.mockResolvedValue(true);
@@ -158,6 +159,15 @@ describe("sortFiles logic", () => {
 		expect(exitSpy).toHaveBeenCalledWith(1);
 	});
 
+	it("should reject a target that is not a directory", async () => {
+		fs.stat.mockResolvedValue({ isDirectory: () => false });
+
+		await sortFiles();
+
+		expect(exitSpy).toHaveBeenCalledWith(1);
+		expect(fs.move).not.toHaveBeenCalled();
+	});
+
 	describe("revert", () => {
 		let imagesEntries;
 
@@ -165,8 +175,10 @@ describe("sortFiles logic", () => {
 			program.opts.mockReturnValue({ revert: true });
 			imagesEntries = [{ isFile: () => true, name: "photo.jpg" }];
 
-			fs.pathExists.mockImplementation(async p =>
-				Object.keys(CATEGORIES).some(cat => p.endsWith(cat))
+			fs.pathExists.mockImplementation(
+				async p =>
+					p === process.cwd() ||
+					Object.keys(CATEGORIES).some(cat => p.endsWith(cat))
 			);
 			fs.rmdir = vi.fn().mockResolvedValue(undefined);
 			fs.readdir.mockImplementation(async (p, opts) => {
@@ -208,6 +220,7 @@ describe("sortFiles logic", () => {
 		it("should rename instead of overwriting a file already in the root", async () => {
 			fs.pathExists.mockImplementation(
 				async p =>
+					p === process.cwd() ||
 					Object.keys(CATEGORIES).some(cat => p.endsWith(cat)) ||
 					p === path.join(process.cwd(), "photo.jpg")
 			);

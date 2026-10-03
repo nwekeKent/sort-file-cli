@@ -146,6 +146,13 @@ async function sortFiles() {
 		if (!(await fs.pathExists(targetDir))) {
 			spinner.fail(chalk.red(`Directory not found: ${targetDir}`));
 			process.exit(1);
+			return;
+		}
+
+		if (!(await fs.stat(targetDir)).isDirectory()) {
+			spinner.fail(chalk.red(`Not a directory: ${targetDir}`));
+			process.exit(1);
+			return;
 		}
 
 		const files = await fs.readdir(targetDir, { withFileTypes: true });
