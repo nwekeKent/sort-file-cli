@@ -3,7 +3,7 @@
 
 import fs from "fs-extra";
 import path from "path";
-import { Command, Option } from "commander";
+import { Command, InvalidArgumentError, Option } from "commander";
 import chalk from "chalk";
 import ora from "ora";
 import { fileURLToPath } from "url";
@@ -44,7 +44,8 @@ export function formatUnknown(unknown) {
  * @typedef {import("./lib/sorter.js").SortOptions & {
  *   verbose?: boolean,
  *   quiet?: boolean,
- *   json?: boolean
+ *   json?: boolean,
+ *   recursive?: boolean
  * }} CliOptions
  */
 
@@ -58,6 +59,19 @@ export function parseList(value) {
 		.split(",")
 		.map(item => item.trim().toLowerCase())
 		.filter(Boolean);
+}
+
+/**
+ * Parses --depth into a non-negative whole number.
+ * @param {string} value
+ * @returns {number}
+ */
+export function parseDepth(value) {
+	const depth = Number(value);
+	if (!/^\d+$/.test(value.trim()) || !Number.isSafeInteger(depth)) {
+		throw new InvalidArgumentError("Use a whole number, 0 or more.");
+	}
+	return depth;
 }
 
 /**
@@ -177,6 +191,20 @@ export async function main(argv = process.argv) {
 				.argParser(parseList)
 				.conflicts("revert")
 		)
+		.addOption(
+			new Option(
+				"-R, --recursive",
+				"Also sort files in subfolders, into category folders beside them"
+			).conflicts("revert")
+		)
+		.addOption(
+			new Option(
+				"--depth <levels>",
+				"Limit how many subfolder levels --recursive descends (implies --recursive)"
+			)
+				.argParser(parseDepth)
+				.conflicts("revert")
+		)
 		.option("--include-hidden", "Also sort hidden files (dotfiles)")
 		.option("-y, --yes", "Allow running on a root or home directory")
 		.addOption(
@@ -202,6 +230,9 @@ export async function main(argv = process.argv) {
 
 	/** @type {CliOptions} */
 	const options = program.opts();
+	if (options.depth === undefined && options.recursive) {
+		options.depth = Infinity;
+	}
 	const targetDir = program.args[0] || process.cwd();
 	const spinner =
 		options.json || options.quiet

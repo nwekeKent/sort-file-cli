@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { execFileSync, spawnSync } from "node:child_process";
-import { formatUnknown, parseList, toJson } from "./sort-cli.js";
+import { formatUnknown, parseDepth, parseList, toJson } from "./sort-cli.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -104,6 +104,57 @@ describe("CLI selection options", () => {
 			expect(fs.existsSync(path.join(tmp, "images", "a.jpg"))).toBe(true);
 		}
 	);
+});
+
+describe("parseDepth", () => {
+	it("accepts whole numbers", () => {
+		expect(parseDepth("0")).toBe(0);
+		expect(parseDepth("3")).toBe(3);
+	});
+
+	it.each(["-1", "1.5", "abc", ""])("rejects %j", value => {
+		expect(() => parseDepth(value)).toThrow("whole number");
+	});
+});
+
+describe("CLI recursion", () => {
+	beforeEach(() => {
+		fs.mkdirSync(path.join(tmp, "trip", "day1"), { recursive: true });
+		fs.writeFileSync(path.join(tmp, "trip", "a.jpg"), "");
+		fs.writeFileSync(path.join(tmp, "trip", "day1", "b.pdf"), "");
+	});
+
+	it("--recursive sorts subfolders in place", () => {
+		expect(run(tmp, "--recursive").status).toBe(0);
+
+		expect(fs.existsSync(path.join(tmp, "trip", "images", "a.jpg"))).toBe(true);
+		expect(
+			fs.existsSync(path.join(tmp, "trip", "day1", "documents", "b.pdf"))
+		).toBe(true);
+	});
+
+	it("--depth limits it and implies recursion", () => {
+		run(tmp, "--depth", "1");
+
+		expect(fs.existsSync(path.join(tmp, "trip", "images", "a.jpg"))).toBe(true);
+		expect(fs.existsSync(path.join(tmp, "trip", "day1", "b.pdf"))).toBe(true);
+	});
+
+	it("rejects a bad depth and combining with --revert", () => {
+		expect(run(tmp, "--depth", "x").status).toBe(1);
+		expect(run(tmp, "--recursive", "--revert").stderr).toContain(
+			"cannot be used with"
+		);
+		expect(fs.existsSync(path.join(tmp, "trip", "a.jpg"))).toBe(true);
+	});
+
+	it("reverts a recursive sort", () => {
+		run(tmp, "-R");
+		expect(run(tmp, "--revert").status).toBe(0);
+
+		expect(fs.existsSync(path.join(tmp, "trip", "a.jpg"))).toBe(true);
+		expect(fs.existsSync(path.join(tmp, "trip", "images"))).toBe(false);
+	});
 });
 
 describe("toJson", () => {
