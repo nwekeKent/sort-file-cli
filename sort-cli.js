@@ -3,7 +3,7 @@
 
 import fs from "fs-extra";
 import path from "path";
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import chalk from "chalk";
 import ora from "ora";
 import { fileURLToPath } from "url";
@@ -40,6 +40,97 @@ export function formatUnknown(unknown) {
 }
 
 /**
+ * Options accepted on the command line: the sorter's options plus output modes.
+ * @typedef {import("./lib/sorter.js").SortOptions & {
+ *   verbose?: boolean,
+ *   quiet?: boolean,
+ *   json?: boolean
+ * }} CliOptions
+ */
+
+/**
+ * Builds the object printed by --json.
+ * @param {string} targetDir
+ * @param {CliOptions} options
+ * @param {import("./lib/sorter.js").SortResult} result
+ */
+export function toJson(targetDir, options, result) {
+	return {
+		directory: path.resolve(targetDir),
+		mode: options.revert ? "revert" : "sort",
+		dryRun: Boolean(options.dryRun),
+		...result,
+	};
+}
+
+/**
+ * Prints a finished run for a person. --quiet limits this to warnings and
+ * errors; --verbose lists every move, not just the planned ones of a dry run.
+ * @param {import("./lib/sorter.js").SortResult} result
+ * @param {CliOptions} options
+ * @param {import("ora").Ora | null} spinner - Null when output is suppressed.
+ */
+function printReport(result, options, spinner) {
+	// Stop the spinner before printing so the output doesn't interleave
+	spinner?.stop();
+
+	if (!options.quiet && (options.dryRun || options.verbose)) {
+		const verb = options.dryRun
+			? options.revert
+				? "Would move back"
+				: "Would move"
+			: options.revert
+			? "Moved back"
+			: "Moved";
+		for (const { from, to } of result.actions) {
+			console.log(chalk.blue(`${verb}: ${from} → ${to}`));
+		}
+	}
+
+	for (const warning of result.warnings) {
+		console.warn(chalk.yellow(`Warning: ${warning}`));
+	}
+
+	if (result.errors.length > 0) {
+		const count = result.errors.length;
+		if (!options.quiet) {
+			console.log(
+				chalk.yellow(`Finished with ${count} error${count === 1 ? "" : "s"}:`)
+			);
+		}
+		for (const { file, message } of result.errors) {
+			console.error(chalk.red(`  ${file}: ${message}`));
+		}
+		if (!options.quiet) {
+			console.log(
+				chalk.green(`${result.moved} moved, ${result.skipped} skipped`)
+			);
+		}
+	} else if (options.dryRun) {
+		spinner?.succeed(
+			chalk.green(
+				`Dry run complete. Would ${options.revert ? "revert" : "move"} ${
+					result.moved
+				} files.`
+			)
+		);
+	} else {
+		spinner?.succeed(
+			chalk.green(
+				`Successfully ${options.revert ? "reverted" : "sorted"} ${
+					result.moved
+				} files (${result.skipped} skipped)`
+			)
+		);
+	}
+
+	const unknown = formatUnknown(result.unknown);
+	if (unknown && !options.revert && !options.quiet) {
+		console.log(chalk.gray(`Left in place (no matching category): ${unknown}`));
+	}
+}
+
+/**
  * Runs the CLI: parses arguments, sorts or reverts, and prints the outcome.
  * Failures set process.exitCode rather than exiting, so callers stay in control.
  * @param {string[]} [argv] - Full argv, including the node and script entries.
@@ -57,73 +148,59 @@ export async function main(argv = process.argv) {
 			"-r, --revert",
 			"Undo the last sort(s), using the recorded manifest when available"
 		)
-		.option("-f, --force", "Overwrite existing files instead of renaming");
+		.option("-f, --force", "Overwrite existing files instead of renaming")
+		.addOption(
+			new Option("-v, --verbose", "List every file moved").conflicts([
+				"quiet",
+				"json",
+			])
+		)
+		.addOption(
+			new Option("-q, --quiet", "Only print warnings and errors").conflicts([
+				"verbose",
+				"json",
+			])
+		)
+		.addOption(
+			new Option("--json", "Print the result as JSON for scripts").conflicts([
+				"verbose",
+				"quiet",
+			])
+		);
 
 	program.parse(argv);
 
-	/** @type {import("./lib/sorter.js").SortOptions} */
+	/** @type {CliOptions} */
 	const options = program.opts();
 	const targetDir = program.args[0] || process.cwd();
-	const spinner = ora(
-		options.revert ? "Reverting files..." : "Sorting files..."
-	).start();
+	const spinner =
+		options.json || options.quiet
+			? null
+			: ora(options.revert ? "Reverting files..." : "Sorting files...").start();
 
 	try {
 		const result = await sortFiles(targetDir, options);
 
-		// Stop the spinner before printing so the output doesn't interleave
-		spinner.stop();
-
-		if (options.dryRun) {
-			for (const { from, to } of result.actions) {
-				const verb = options.revert ? "Would move back" : "Would move";
-				console.log(chalk.blue(`${verb}: ${from} → ${to}`));
-			}
-		}
-
-		for (const warning of result.warnings) {
-			console.warn(chalk.yellow(`Warning: ${warning}`));
-		}
-
 		if (result.errors.length > 0) {
-			const count = result.errors.length;
-			console.log(
-				chalk.yellow(`Finished with ${count} error${count === 1 ? "" : "s"}:`)
-			);
-			for (const { file, message } of result.errors) {
-				console.error(chalk.red(`  ${file}: ${message}`));
-			}
-			console.log(
-				chalk.green(`${result.moved} moved, ${result.skipped} skipped`)
-			);
 			process.exitCode = 1;
-		} else if (options.dryRun) {
-			spinner.succeed(
-				chalk.green(
-					`Dry run complete. Would ${
-						options.revert ? "revert" : "move"
-					} ${result.moved} files.`
-				)
-			);
-		} else {
-			spinner.succeed(
-				chalk.green(
-					`Successfully ${options.revert ? "reverted" : "sorted"} ${
-						result.moved
-					} files (${result.skipped} skipped)`
-				)
-			);
 		}
 
-		const unknown = formatUnknown(result.unknown);
-		if (unknown && !options.revert) {
-			console.log(chalk.gray(`Left in place (no matching category): ${unknown}`));
+		if (options.json) {
+			console.log(JSON.stringify(toJson(targetDir, options, result), null, 2));
+		} else {
+			printReport(result, options, spinner);
 		}
 	} catch (error) {
-		spinner.fail(
-			chalk.red(error instanceof Error ? error.message : String(error))
-		);
+		const message = error instanceof Error ? error.message : String(error);
 		process.exitCode = 1;
+
+		if (options.json) {
+			console.log(JSON.stringify({ error: message }, null, 2));
+		} else if (spinner) {
+			spinner.fail(chalk.red(message));
+		} else {
+			console.error(chalk.red(message));
+		}
 	}
 }
 

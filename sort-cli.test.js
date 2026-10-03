@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { execFileSync, spawnSync } from "node:child_process";
-import { formatUnknown } from "./sort-cli.js";
+import { formatUnknown, toJson } from "./sort-cli.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -29,6 +29,123 @@ describe("formatUnknown", () => {
 
 	it("is empty when there is nothing to report", () => {
 		expect(formatUnknown({})).toBe("");
+	});
+});
+
+describe("toJson", () => {
+	const result = {
+		moved: 1,
+		skipped: 0,
+		errors: [],
+		actions: [{ from: "a.jpg", to: "images/a.jpg" }],
+		warnings: [],
+		unknown: {},
+	};
+
+	it("describes a sort", () => {
+		expect(toJson("/x", {}, result)).toEqual({
+			directory: path.resolve("/x"),
+			mode: "sort",
+			dryRun: false,
+			...result,
+		});
+	});
+
+	it("describes a dry-run revert", () => {
+		expect(toJson("/x", { revert: true, dryRun: true }, result)).toMatchObject({
+			mode: "revert",
+			dryRun: true,
+		});
+	});
+});
+
+describe("CLI output modes", () => {
+	beforeEach(() => {
+		fs.writeFileSync(path.join(tmp, "a.jpg"), "");
+		fs.writeFileSync(path.join(tmp, "b.xyz"), "");
+	});
+
+	it("--verbose lists each move of a real run", () => {
+		const { stdout, stderr } = run(tmp, "--verbose");
+
+		expect(stdout).toContain("Moved: a.jpg → ");
+		expect(stderr).toContain("Successfully sorted 1 files");
+	});
+
+	it("--verbose labels reverted moves", () => {
+		run(tmp);
+
+		expect(run(tmp, "--revert", "--verbose").stdout).toContain("Moved back: ");
+	});
+
+	it("--quiet prints nothing on success", () => {
+		const { stdout, stderr, status } = run(tmp, "--quiet");
+
+		expect(status).toBe(0);
+		expect(stdout).toBe("");
+		expect(stderr).toBe("");
+		expect(fs.existsSync(path.join(tmp, "images", "a.jpg"))).toBe(true);
+	});
+
+	it("--quiet still reports fatal errors on stderr", () => {
+		const { stdout, stderr, status } = run(path.join(tmp, "nope"), "--quiet");
+
+		expect(status).toBe(1);
+		expect(stdout).toBe("");
+		expect(stderr).toContain("Directory not found");
+	});
+
+	it("--quiet still shows warnings", () => {
+		fs.mkdirSync(path.join(tmp, "docs-old"));
+		fs.mkdirSync(path.join(tmp, "images"));
+		fs.writeFileSync(path.join(tmp, "images", "x.jpg"), "");
+
+		expect(run(tmp, "--revert", "--quiet").stderr).toContain("No manifest");
+	});
+
+	it("--json prints only a parseable result on stdout", () => {
+		const { stdout, status } = run(tmp, "--json");
+
+		const parsed = JSON.parse(stdout);
+		expect(status).toBe(0);
+		expect(parsed).toMatchObject({
+			mode: "sort",
+			dryRun: false,
+			moved: 1,
+			skipped: 1,
+			errors: [],
+			unknown: { xyz: 1 },
+		});
+		expect(parsed.actions).toEqual([
+			{ from: "a.jpg", to: path.join("images", "a.jpg") },
+		]);
+	});
+
+	it("--json with --dry-run reports the plan without moving", () => {
+		const parsed = JSON.parse(run(tmp, "--json", "--dry-run").stdout);
+
+		expect(parsed.dryRun).toBe(true);
+		expect(parsed.moved).toBe(1);
+		expect(fs.existsSync(path.join(tmp, "a.jpg"))).toBe(true);
+	});
+
+	it("--json reports fatal errors as JSON with a non-zero exit", () => {
+		const { stdout, status } = run(path.join(tmp, "nope"), "--json");
+
+		expect(status).toBe(1);
+		expect(JSON.parse(stdout).error).toContain("Directory not found");
+	});
+
+	it.each([
+		["--quiet", "--verbose"],
+		["--json", "--quiet"],
+		["--json", "--verbose"],
+	])("rejects %s together with %s", (a, b) => {
+		const { status, stderr } = run(tmp, a, b);
+
+		expect(status).toBe(1);
+		expect(stderr).toContain("cannot be used with");
+		expect(fs.existsSync(path.join(tmp, "a.jpg"))).toBe(true);
 	});
 });
 
