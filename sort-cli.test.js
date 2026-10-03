@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import fs from "fs-extra";
+import path from "path";
 import { program } from "commander";
 import {
 	getCategoryForExtension,
@@ -142,24 +143,68 @@ describe("sortFiles logic", () => {
 		expect(exitSpy).toHaveBeenCalledWith(1);
 	});
 
-	it("should revert files correctly", async () => {
-		program.opts.mockReturnValue({ revert: true });
+	describe("revert", () => {
+		let imagesEntries;
 
-		// Mock directory structure for revert
-		fs.pathExists.mockImplementation(path => {
-			// Check if the path ends with any of the category names
-			return Object.keys(CATEGORIES).some(cat => path.endsWith(cat));
+		beforeEach(() => {
+			program.opts.mockReturnValue({ revert: true });
+			imagesEntries = [{ isFile: () => true, name: "photo.jpg" }];
+
+			fs.pathExists.mockImplementation(async p =>
+				Object.keys(CATEGORIES).some(cat => p.endsWith(cat))
+			);
+			fs.rmdir = vi.fn().mockResolvedValue(undefined);
+			fs.readdir.mockImplementation(async (p, opts) => {
+				if (!p.endsWith("images")) return [];
+				// After the move loop the folder is checked without options
+				return opts ? imagesEntries : [];
+			});
 		});
 
-		fs.readdir.mockImplementation(path => {
-			if (path.endsWith("images")) return Promise.resolve(["photo.jpg"]);
-			return Promise.resolve([]);
+		it("should revert files and remove the emptied folder", async () => {
+			await sortFiles();
+
+			expect(fs.move).toHaveBeenCalledTimes(1);
+			expect(fs.rmdir).toHaveBeenCalledWith(expect.stringContaining("images"));
+			expect(fs.remove).not.toHaveBeenCalled();
 		});
 
-		await sortFiles();
+		it("should not move subdirectories out of a category folder", async () => {
+			imagesEntries = [{ isFile: () => false, name: "nested" }];
 
-		expect(fs.move).toHaveBeenCalled();
-		expect(fs.remove).toHaveBeenCalledWith(expect.stringContaining("images"));
+			await sortFiles();
+
+			expect(fs.move).not.toHaveBeenCalled();
+		});
+
+		it("should not remove a category folder that is not empty", async () => {
+			fs.readdir.mockImplementation(async (p, opts) => {
+				if (!p.endsWith("images")) return [];
+				return opts ? imagesEntries : ["nested"];
+			});
+
+			await sortFiles();
+
+			expect(fs.rmdir).not.toHaveBeenCalledWith(
+				expect.stringContaining("images")
+			);
+		});
+
+		it("should rename instead of overwriting a file already in the root", async () => {
+			fs.pathExists.mockImplementation(
+				async p =>
+					Object.keys(CATEGORIES).some(cat => p.endsWith(cat)) ||
+					p === path.join(process.cwd(), "photo.jpg")
+			);
+
+			await sortFiles();
+
+			expect(fs.move).toHaveBeenCalledWith(
+				expect.stringMatching(/images.photo\.jpg$/),
+				expect.stringMatching(/photo \(1\)\.jpg$/),
+				{ overwrite: false }
+			);
+		});
 	});
 });
 

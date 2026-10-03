@@ -162,16 +162,30 @@ async function sortFiles() {
 					continue;
 				}
 
-				const categoryFiles = await fs.readdir(categoryPath);
+				const entries = await fs.readdir(categoryPath, {
+					withFileTypes: true,
+				});
 
-				for (const file of categoryFiles) {
-					const sourcePath = path.join(categoryPath, file);
-					const destinationPath = path.join(targetDir, file);
+				for (const entry of entries) {
+					// Never move subdirectories out of a category folder
+					if (!entry.isFile()) {
+						skipCount++;
+						continue;
+					}
+
+					const sourcePath = path.join(categoryPath, entry.name);
+					const desiredPath = path.join(targetDir, entry.name);
+					const destinationPath = program.opts().force
+						? desiredPath
+						: await getAvailablePath(desiredPath);
 
 					if (program.opts().dryRun) {
 						console.log(
 							chalk.blue(
-								`Would move back: ${path.join(category, file)} → ${file}`
+								`Would move back: ${path.join(category, entry.name)} → ${path.relative(
+									targetDir,
+									destinationPath
+								)}`
 							)
 						);
 						moveCount++;
@@ -179,13 +193,18 @@ async function sortFiles() {
 					}
 
 					// Move file back to root directory
-					await fs.move(sourcePath, destinationPath, { overwrite: true });
+					await fs.move(sourcePath, destinationPath, {
+						overwrite: Boolean(program.opts().force),
+					});
 					moveCount++;
 				}
 
-				// Remove the empty category folder
-				if (!program.opts().dryRun) {
-					await fs.remove(categoryPath);
+				// Remove the category folder only if it is now empty
+				if (
+					!program.opts().dryRun &&
+					(await fs.readdir(categoryPath)).length === 0
+				) {
+					await fs.rmdir(categoryPath);
 				}
 			}
 		} else {
