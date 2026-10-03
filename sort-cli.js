@@ -49,6 +49,18 @@ export function formatUnknown(unknown) {
  */
 
 /**
+ * Parses a comma-separated option value into trimmed, lowercase names.
+ * @param {string} value
+ * @returns {string[]}
+ */
+export function parseList(value) {
+	return value
+		.split(",")
+		.map(item => item.trim().toLowerCase())
+		.filter(Boolean);
+}
+
+/**
  * Builds the object printed by --json.
  * @param {string} targetDir
  * @param {CliOptions} options
@@ -149,6 +161,24 @@ export async function main(argv = process.argv) {
 			"Undo the last sort(s), using the recorded manifest when available"
 		)
 		.option("-f, --force", "Overwrite existing files instead of renaming")
+		.addOption(
+			new Option(
+				"--include <categories>",
+				"Only sort these categories (comma-separated, e.g. images,documents)"
+			)
+				.argParser(parseList)
+				.conflicts("revert")
+		)
+		.addOption(
+			new Option(
+				"--exclude <categories>",
+				"Never sort these categories (comma-separated, e.g. code)"
+			)
+				.argParser(parseList)
+				.conflicts("revert")
+		)
+		.option("--include-hidden", "Also sort hidden files (dotfiles)")
+		.option("-y, --yes", "Allow running on a root or home directory")
 		.addOption(
 			new Option("-v, --verbose", "List every file moved").conflicts([
 				"quiet",

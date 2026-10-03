@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { execFileSync, spawnSync } from "node:child_process";
-import { formatUnknown, toJson } from "./sort-cli.js";
+import { formatUnknown, parseList, toJson } from "./sort-cli.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -9,6 +9,11 @@ import { fileURLToPath } from "node:url";
 const CLI = path.join(path.dirname(fileURLToPath(import.meta.url)), "sort-cli.js");
 const run = (...args) =>
 	spawnSync(process.execPath, [CLI, ...args], { encoding: "utf8" });
+const runWithEnv = (env, ...args) =>
+	spawnSync(process.execPath, [CLI, ...args], {
+		encoding: "utf8",
+		env: { ...process.env, ...env },
+	});
 
 let tmp;
 
@@ -30,6 +35,75 @@ describe("formatUnknown", () => {
 	it("is empty when there is nothing to report", () => {
 		expect(formatUnknown({})).toBe("");
 	});
+});
+
+describe("parseList", () => {
+	it("splits on commas, trims and lowercases", () => {
+		expect(parseList(" Images, documents ,,CODE")).toEqual([
+			"images",
+			"documents",
+			"code",
+		]);
+	});
+});
+
+describe("CLI selection options", () => {
+	beforeEach(() => {
+		for (const name of ["a.jpg", "b.pdf", "c.js", ".hidden.json"]) {
+			fs.writeFileSync(path.join(tmp, name), "");
+		}
+	});
+
+	it("--include sorts only the listed categories", () => {
+		expect(run(tmp, "--include", "images,documents").status).toBe(0);
+
+		expect(fs.existsSync(path.join(tmp, "images", "a.jpg"))).toBe(true);
+		expect(fs.existsSync(path.join(tmp, "documents", "b.pdf"))).toBe(true);
+		expect(fs.existsSync(path.join(tmp, "c.js"))).toBe(true);
+	});
+
+	it("--exclude skips the listed categories", () => {
+		run(tmp, "--exclude", "code");
+
+		expect(fs.existsSync(path.join(tmp, "c.js"))).toBe(true);
+		expect(fs.existsSync(path.join(tmp, "images", "a.jpg"))).toBe(true);
+	});
+
+	it("reports a mistyped category and moves nothing", () => {
+		const { status, stdout, stderr } = run(tmp, "--include", "imagse");
+
+		expect(status).toBe(1);
+		expect(stdout + stderr).toContain('Unknown category "imagse"');
+		expect(fs.existsSync(path.join(tmp, "a.jpg"))).toBe(true);
+	});
+
+	it("rejects --include together with --revert", () => {
+		const { status, stderr } = run(tmp, "--revert", "--include", "images");
+
+		expect(status).toBe(1);
+		expect(stderr).toContain("cannot be used with");
+	});
+
+	it("--include-hidden also sorts dotfiles", () => {
+		run(tmp, "--include-hidden");
+
+		expect(fs.existsSync(path.join(tmp, "code", ".hidden.json"))).toBe(true);
+	});
+
+	it.skipIf(process.platform === "win32")(
+		"refuses the home directory without --yes, and proceeds with it",
+		() => {
+			const env = { HOME: tmp };
+
+			const refused = runWithEnv(env, tmp);
+			expect(refused.status).toBe(1);
+			expect(refused.stdout + refused.stderr).toContain("--yes");
+			expect(fs.existsSync(path.join(tmp, "a.jpg"))).toBe(true);
+
+			expect(runWithEnv(env, tmp, "--yes").status).toBe(0);
+			expect(fs.existsSync(path.join(tmp, "images", "a.jpg"))).toBe(true);
+		}
+	);
 });
 
 describe("toJson", () => {
