@@ -45,7 +45,7 @@
 		"chalk": "^5.4.1",
 		"commander": "^13.1.0",
 		"fs-extra": "^11.3.0",
-		"ora": "^8.2.0"
+		"ora": "^9.4.1"
 	},
 	"repository": {
 		"type": "git",
