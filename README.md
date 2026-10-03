@@ -1,13 +1,20 @@
 # 📂 Sort Files CLI
 
 [![npm version](https://img.shields.io/npm/v/sort-files-cli.svg?style=flat-square)](https://www.npmjs.com/package/sort-files-cli)
+[![npm total downloads](https://img.shields.io/npm/dt/sort-files-cli.svg?style=flat-square&label=downloads)](https://www.npmjs.com/package/sort-files-cli)
+[![npm monthly downloads](https://img.shields.io/npm/dm/sort-files-cli.svg?style=flat-square&label=downloads%2Fmonth)](https://www.npmjs.com/package/sort-files-cli)
 [![CI](https://img.shields.io/github/actions/workflow/status/nwekeKent/sort-file-cli/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/nwekeKent/sort-file-cli/actions/workflows/ci.yml)
+[![node](https://img.shields.io/node/v/sort-files-cli.svg?style=flat-square)](https://nodejs.org)
+[![install size](https://packagephobia.com/badge?p=sort-files-cli)](https://packagephobia.com/result?p=sort-files-cli)
+[![GitHub stars](https://img.shields.io/github/stars/nwekeKent/sort-file-cli.svg?style=flat-square)](https://github.com/nwekeKent/sort-file-cli/stargazers)
 [![license](https://img.shields.io/npm/l/sort-files-cli.svg?style=flat-square)](LICENSE)
 
 A command-line tool that tidies a messy folder by moving files into category
 folders (`images/`, `documents/`, `code/`, ...) based on their extension. It
 never overwrites your files, can preview every move first, and can undo what it
 did.
+
+**Contents:** [Features](#-features) · [What's new in 2.0](#-whats-new-in-20) · [Installation](#-installation) · [Usage](#-usage) · [Safety and undo](#-how-it-keeps-your-files-safe) · [Recursive](#-recursive-sorting) · [Custom categories](#-custom-categories) · [Scripting](#-scripting) · [Categories](#-built-in-categories) · [API](#-programmatic-use) · [Contributing](#-contributing)
 
 ## ✨ Features
 
@@ -30,6 +37,37 @@ Downloads/                   Downloads/
 ├── archive.zip              └── Makefile      (no category: left in place)
 └── Makefile
 ```
+
+## 🆕 What's new in 2.0
+
+Version 2.0 is a safety and capability overhaul:
+
+- **Nothing is overwritten any more.** Collisions are renamed, hidden files are
+  skipped, and a root or home directory is refused.
+- **A real undo.** Each sort records a manifest, so `--revert` restores exactly
+  what was moved.
+- **More control.** `--include`/`--exclude`, `--recursive`/`--depth`,
+  `--include-hidden`, and custom categories via `.sortfilesrc.json`.
+- **Better output.** `--verbose`, `--quiet`, `--json`, and a list of files
+  left in place for lack of a category.
+- **More accurate categories**, with many more extensions.
+- **Rebuilt internals.** Tested on Linux, macOS and Windows with Node 20, 22
+  and 24, and published with only the files it needs.
+
+### Upgrading from 1.x
+
+| In 1.x                                                   | In 2.0                                                                                  |
+| :------------------------------------------------------- | :-------------------------------------------------------------------------------------- |
+| An existing file with the same name was overwritten      | The incoming file is renamed (`photo (1).jpg`). Use `--force` for the old behaviour     |
+| Hidden files such as `.eslintrc.json` were sorted        | They are skipped. Use `--include-hidden` to sort them                                   |
+| `--revert` moved back everything in the category folders | It restores only what the manifest recorded (falls back to the old way, with a warning) |
+| `md` files went to `code/`                               | They go to `documents/` (change it with a custom category)                              |
+| Any directory could be sorted, including `~` and `/`     | Those are refused unless you pass `--yes`                                               |
+| One failed move aborted the run                          | The rest are still sorted, failures are listed, and the exit code is 1                  |
+| Any Node version                                         | Node.js 20 or newer                                                                     |
+
+Folders sorted by 1.x have no manifest, so the first `--revert` on them uses
+the fallback and prints a warning. Sorts made with 2.0 are fully undoable.
 
 ## 🛠 Installation
 
@@ -139,7 +177,7 @@ trip/day1/b.pdf     →   trip/day1/documents/b.pdf
 `--include-hidden`) hidden folders are never entered. Recursive sorts are
 recorded in the manifest, so `--revert` undoes them too.
 
-## ⚙️ Custom categories
+## 🔧 Custom categories
 
 Create `.sortfilesrc.json` in the folder you are sorting (or in your home
 directory to apply everywhere):
