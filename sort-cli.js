@@ -22,7 +22,7 @@ function getPackageConfig() {
 		const __dirname = path.dirname(fileURLToPath(import.meta.url));
 		const data = fs.readJsonSync(path.join(__dirname, "package.json"));
 		return { version: data.version || "1.0.0" };
-	} catch (e) {
+	} catch {
 		return { version: "1.0.0" };
 	}
 }
@@ -305,7 +305,7 @@ function isMainModule() {
 		return (
 			fs.realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)
 		);
-	} catch (e) {
+	} catch {
 		return false;
 	}
 }

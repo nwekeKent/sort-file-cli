@@ -3,7 +3,13 @@
   "version": "1.1.2",
   "scripts": {
     "test": "vitest run",
-    "test:coverage": "vitest run --coverage"
+    "test:coverage": "vitest run --coverage",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc",
+    "check": "npm run lint && npm run format:check && npm run typecheck && npm test",
+    "prepublishOnly": "npm run check"
   },
   "description": "A CLI tool to sort files into predefined categories",
   "type": "module",
@@ -50,7 +56,14 @@
   },
   "homepage": "https://github.com/nwekeKent/sort-file-cli#readme",
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/fs-extra": "^11.0.4",
+    "@types/node": "^20.19.43",
     "@vitest/coverage-v8": "^4.0.16",
+    "eslint": "^10.12.0",
+    "globals": "^17.13.0",
+    "prettier": "^3.9.9",
+    "typescript": "^7.0.2",
     "vitest": "^4.0.16"
   }
 }
