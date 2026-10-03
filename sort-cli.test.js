@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { execFileSync, spawnSync } from "node:child_process";
+import { formatUnknown } from "./sort-cli.js";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -19,7 +20,39 @@ afterEach(() => {
 	fs.rmSync(tmp, { recursive: true, force: true });
 });
 
+describe("formatUnknown", () => {
+	it("lists the most common extensions first", () => {
+		expect(formatUnknown({ foo: 1, xyz: 3, "": 2 })).toBe(
+			".xyz (3), no extension (2), .foo (1)"
+		);
+	});
+
+	it("is empty when there is nothing to report", () => {
+		expect(formatUnknown({})).toBe("");
+	});
+});
+
 describe("CLI", () => {
+	it("lists files left in place for lack of a category", () => {
+		fs.writeFileSync(path.join(tmp, "a.xyz"), "");
+		fs.writeFileSync(path.join(tmp, "b.xyz"), "");
+		fs.writeFileSync(path.join(tmp, "Makefile"), "");
+		fs.writeFileSync(path.join(tmp, "b.jpg"), "");
+
+		const { stdout } = run(tmp);
+
+		expect(stdout).toContain(
+			"Left in place (no matching category): .xyz (2), no extension (1)"
+		);
+		expect(fs.existsSync(path.join(tmp, "a.xyz"))).toBe(true);
+	});
+
+	it("stays quiet about unknown files when everything was sorted", () => {
+		fs.writeFileSync(path.join(tmp, "b.jpg"), "");
+
+		expect(run(tmp).stdout).not.toContain("Left in place");
+	});
+
 	it("prints the package version", () => {
 		const { version } = JSON.parse(
 			fs.readFileSync(path.join(path.dirname(CLI), "package.json"), "utf8")

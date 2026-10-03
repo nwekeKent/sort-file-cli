@@ -27,6 +27,19 @@ function getPackageConfig() {
 }
 
 /**
+ * Describes files left in place for lack of a matching category, most
+ * common extension first, e.g. ".xyz (3), no extension (1)".
+ * @param {Record<string, number>} unknown - Counts keyed by extension.
+ * @returns {string} Empty when there is nothing to report.
+ */
+export function formatUnknown(unknown) {
+	return Object.entries(unknown)
+		.sort(([extA, a], [extB, b]) => b - a || extA.localeCompare(extB))
+		.map(([ext, count]) => `${ext ? `.${ext}` : "no extension"} (${count})`)
+		.join(", ");
+}
+
+/**
  * Runs the CLI: parses arguments, sorts or reverts, and prints the outcome.
  * Failures set process.exitCode rather than exiting, so callers stay in control.
  * @param {string[]} [argv] - Full argv, including the node and script entries.
@@ -100,6 +113,11 @@ export async function main(argv = process.argv) {
 					} files (${result.skipped} skipped)`
 				)
 			);
+		}
+
+		const unknown = formatUnknown(result.unknown);
+		if (unknown && !options.revert) {
+			console.log(chalk.gray(`Left in place (no matching category): ${unknown}`));
 		}
 	} catch (error) {
 		spinner.fail(
