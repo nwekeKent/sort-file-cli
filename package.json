@@ -2,7 +2,8 @@
   "name": "sort-files-cli",
   "version": "1.1.2",
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage"
   },
   "description": "A CLI tool to sort files into predefined categories",
   "type": "module",
@@ -40,6 +41,7 @@
   },
   "homepage": "https://github.com/nwekeKent/sort-file-cli#readme",
   "devDependencies": {
+    "@vitest/coverage-v8": "^4.0.16",
     "vitest": "^4.0.16"
   }
 }
