@@ -151,6 +151,22 @@ async function sortFiles() {
 		const files = await fs.readdir(targetDir, { withFileTypes: true });
 		let moveCount = 0;
 		let skipCount = 0;
+		const errors = [];
+
+		// Move a single file, recording a failure instead of aborting the run
+		const moveFile = async (sourcePath, destinationPath) => {
+			try {
+				await fs.move(sourcePath, destinationPath, {
+					overwrite: Boolean(program.opts().force),
+				});
+				moveCount++;
+			} catch (error) {
+				errors.push({
+					file: path.relative(targetDir, sourcePath),
+					message: error.message,
+				});
+			}
+		};
 
 		if (program.opts().revert) {
 			// Only revert predefined category folders
@@ -193,10 +209,7 @@ async function sortFiles() {
 					}
 
 					// Move file back to root directory
-					await fs.move(sourcePath, destinationPath, {
-						overwrite: Boolean(program.opts().force),
-					});
-					moveCount++;
+					await moveFile(sourcePath, destinationPath);
 				}
 
 				// Remove the category folder only if it is now empty
@@ -247,17 +260,27 @@ async function sortFiles() {
 
 				await fs.ensureDir(categoryFolder);
 				if (sourcePath !== destinationPath) {
-					await fs.move(sourcePath, destinationPath, {
-						overwrite: Boolean(program.opts().force),
-					});
-					moveCount++;
+					await moveFile(sourcePath, destinationPath);
 				} else {
 					skipCount++;
 				}
 			}
 		}
 
-		if (program.opts().dryRun) {
+		if (errors.length > 0) {
+			spinner.warn(
+				chalk.yellow(
+					`Finished with ${errors.length} error${errors.length === 1 ? "" : "s"}:`
+				)
+			);
+			for (const { file, message } of errors) {
+				console.error(chalk.red(`  ${file}: ${message}`));
+			}
+			console.log(
+				chalk.green(`${moveCount} moved, ${skipCount} skipped`)
+			);
+			process.exitCode = 1;
+		} else if (program.opts().dryRun) {
 			spinner.succeed(
 				chalk.green(
 					`Dry run complete. Would ${

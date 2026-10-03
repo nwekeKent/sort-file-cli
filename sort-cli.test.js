@@ -16,6 +16,7 @@ vi.mock("ora", () => ({
 		start: vi.fn().mockReturnThis(),
 		succeed: vi.fn().mockReturnThis(),
 		fail: vi.fn().mockReturnThis(),
+		warn: vi.fn().mockReturnThis(),
 	})),
 }));
 
@@ -122,6 +123,20 @@ describe("sortFiles logic", () => {
 			expect.stringMatching(/images.photo\.jpg$/),
 			{ overwrite: true }
 		);
+	});
+
+	it("should keep going and set a failing exit code when a move fails", async () => {
+		fs.readdir.mockResolvedValue([
+			{ isFile: () => true, name: "a.jpg" },
+			{ isFile: () => true, name: "b.pdf" },
+		]);
+		fs.move.mockRejectedValueOnce(new Error("EACCES"));
+
+		await sortFiles();
+
+		expect(fs.move).toHaveBeenCalledTimes(2);
+		expect(process.exitCode).toBe(1);
+		process.exitCode = undefined;
 	});
 
 	it("should respect dry-run flag", async () => {
