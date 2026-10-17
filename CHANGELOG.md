@@ -5,8 +5,10 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
-Several defaults changed to stop the tool from losing data, so this is best
-released as a new major (or at least minor) version.
+## [2.0.0] - 2026-10-03
+
+Several defaults changed to stop the tool from losing data, so this is a new
+major version. See "Upgrading from 1.x" in the README.
 
 ### Changed
 
@@ -62,9 +64,13 @@ released as a new major (or at least minor) version.
 - Tests run against real temporary directories instead of mocked `fs`.
 - Added ESLint, Prettier, a strict `tsc` check over the JSDoc types, a
   coverage script, GitHub Actions (Linux, macOS and Windows on Node 20, 22
-  and 24), a publish workflow with npm provenance, and Dependabot.
+  and 24), and Dependabot (one grouped pull request per ecosystem).
 - Added the missing `LICENSE` file and removed the duplicate `yarn.lock`.
 
 ## [1.1.2]
 
 Earlier releases; see the git history.
+
+[Unreleased]: https://github.com/nwekeKent/sort-file-cli/compare/v2.0.0...HEAD
+[2.0.0]: https://github.com/nwekeKent/sort-file-cli/compare/v1.1.2...v2.0.0
+[1.1.2]: https://github.com/nwekeKent/sort-file-cli/releases/tag/v1.1.2

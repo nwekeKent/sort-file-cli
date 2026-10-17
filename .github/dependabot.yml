@@ -1,13 +1,19 @@
 version: 2
 updates:
+  # One pull request for all npm updates (runtime and dev, any version bump).
   - package-ecosystem: npm
     directory: /
     schedule:
       interval: weekly
     groups:
-      dev-dependencies:
-        dependency-type: development
+      npm-dependencies:
+        patterns: ["*"]
+  # Dependabot opens separate pull requests per ecosystem, so GitHub Actions
+  # updates arrive as their own single PR.
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: monthly
+    groups:
+      github-actions:
+        patterns: ["*"]
