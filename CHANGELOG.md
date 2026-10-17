@@ -64,7 +64,7 @@ major version. See "Upgrading from 1.x" in the README.
 - Tests run against real temporary directories instead of mocked `fs`.
 - Added ESLint, Prettier, a strict `tsc` check over the JSDoc types, a
   coverage script, GitHub Actions (Linux, macOS and Windows on Node 20, 22
-  and 24), a publish workflow with npm provenance, and Dependabot.
+  and 24), and Dependabot (one grouped pull request per ecosystem).
 - Added the missing `LICENSE` file and removed the duplicate `yarn.lock`.
 
 ## [1.1.2]
