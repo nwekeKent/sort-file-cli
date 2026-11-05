@@ -5,6 +5,11 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+### Removed
+
+- The Dependabot configuration (`.github/dependabot.yml`). Dependency updates
+  are now handled manually.
+
 ## [2.0.0] - 2026-10-03
 
 Several defaults changed to stop the tool from losing data, so this is a new
